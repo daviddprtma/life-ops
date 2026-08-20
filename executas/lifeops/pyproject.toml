@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tool-dev-lifeops"
+version = "0.1.0"
+description = "Executa for the lifeops Anna App"
+requires-python = ">=3.10"
+
+[project.scripts]
+"tool-dev-lifeops" = "lifeops_plugin:main"
+
+[tool.setuptools]
+py-modules = ["lifeops_plugin"]

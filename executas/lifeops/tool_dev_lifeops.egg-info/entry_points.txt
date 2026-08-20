@@ -1,0 +1,2 @@
+[console_scripts]
+tool-dev-lifeops = lifeops_plugin:main
