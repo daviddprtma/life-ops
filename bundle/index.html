@@ -2,12 +2,125 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>lifeops</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LifeOps — AI Action Planner</title>
+    <meta name="description" content="Turn any messy real-world situation into a structured, prioritised action plan — powered by AI." />
+    <link rel="stylesheet" href="./style.css" />
     <script src="./app.js" type="module"></script>
   </head>
   <body>
-    <h1>lifeops</h1>
-    <button id="primary-btn">Run</button>
-    <pre id="status">…</pre>
+    <div id="app">
+
+      <!-- Header -->
+      <header>
+        <div class="logo" aria-hidden="true">⚡</div>
+        <h1>LifeOps</h1>
+        <span class="subtitle">AI Action Planner</span>
+      </header>
+
+      <!-- Two-column main area -->
+      <main id="main-grid">
+
+        <!-- ── Left: Input panel ── -->
+        <section class="input-panel" aria-label="Input">
+
+          <div class="section-label">Describe your situation</div>
+
+          <!-- Situation textarea -->
+          <div class="field" style="flex:1;display:flex;flex-direction:column;">
+            <label for="situation">
+              What's going on? <span>*</span>
+            </label>
+            <textarea
+              id="situation"
+              placeholder="Dump everything here — the messier the better. Deadlines, conflicts, worries, to-dos, half-formed ideas… just write it all out."
+              maxlength="3000"
+              aria-required="true"
+            ></textarea>
+            <span class="char-count" id="char-count">0 / 3000</span>
+          </div>
+
+          <!-- Category -->
+          <div class="field">
+            <label for="category">Category</label>
+            <select id="category" aria-label="Situation category">
+              <option value="personal">🏠  Personal</option>
+              <option value="work" selected>💼  Work</option>
+              <option value="finance">💰  Finance</option>
+              <option value="health">❤️  Health</option>
+              <option value="relationships">🤝  Relationships</option>
+              <option value="other">🌀  Other</option>
+            </select>
+          </div>
+
+          <!-- Extra context -->
+          <div class="field">
+            <label for="context">Extra context <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+            <input
+              type="text"
+              id="context"
+              placeholder="Constraints, deadlines, people involved…"
+              maxlength="400"
+            />
+          </div>
+
+          <!-- Generate button -->
+          <button
+            id="btn-generate"
+            class="btn-generate"
+            aria-label="Generate action plan"
+          >
+            <span id="btn-icon">✦</span>
+            <span id="btn-label">Generate Action Plan</span>
+          </button>
+
+          <!-- Recent plans -->
+          <div id="history-section" style="display:none;">
+            <div class="section-label" style="margin-bottom:8px;">Recent plans</div>
+            <div class="history-strip" id="history-list" aria-label="Recent plans"></div>
+          </div>
+
+        </section>
+
+        <!-- ── Right: Output panel ── -->
+        <section class="output-panel" id="output-panel" aria-label="Action plan output" aria-live="polite">
+
+          <!-- Empty state (default) -->
+          <div class="empty-state" id="state-empty">
+            <div class="icon">📋</div>
+            <p>Your structured action plan will appear here after you describe your situation.</p>
+          </div>
+
+          <!-- Loading state -->
+          <div class="loading-wrap" id="state-loading" style="display:none;" aria-busy="true" aria-label="Generating plan">
+            <div class="spinner"></div>
+            <span>Analysing your situation…</span>
+            <div class="shimmer-container">
+              <div class="shimmer-block"></div>
+              <div class="shimmer-block"></div>
+              <div class="shimmer-block"></div>
+            </div>
+          </div>
+
+          <!-- Error state -->
+          <div class="error-card" id="state-error" style="display:none;" role="alert">
+            <span class="err-icon">⚠️</span>
+            <div>
+              <strong>Something went wrong</strong><br />
+              <span id="error-message"></span>
+            </div>
+          </div>
+
+          <!-- Plan output -->
+          <div class="plan-output" id="state-plan" style="display:none;"></div>
+
+        </section>
+
+      </main>
+
+      <!-- Toast -->
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    </div>
   </body>
 </html>

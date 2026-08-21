@@ -1,0 +1,1 @@
+{"session_id":"sess-1","ns":"tools","method":"invoke","args":{"tool_id":"tool-dev-lifeops","method":"plan","args":{"situation":"I have a presentation due tomorrow and missed a dentist appointment.","category":"work"}}}

@@ -1,6 +1,6 @@
 {
   "name": "lifeops",
-  "tagline": "TODO",
-  "description": "TODO",
+  "tagline": "Turn chaos into clarity — AI-powered action plans for messy real life",
+  "description": "Dump a messy real-world situation into LifeOps — text, notes, ideas — and get back a structured action plan instantly. Powered by your favourite LLM via Anna's sampling API, LifeOps breaks down complexity into prioritised tasks, highlights your single next action, and saves your plans for later review.",
   "category": "productivity"
 }

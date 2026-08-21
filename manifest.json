@@ -1,12 +1,18 @@
 {
   "schema": 2,
-  "permissions": ["tools.invoke", "storage.read", "storage.write"],
+  "permissions": [
+    "tools.invoke",
+    "storage.read",
+    "storage.write"
+  ],
+  "host_capabilities": ["llm.sample"],
   "required_executas": [
     {
       "tool_id": "tool-dev-lifeops"
     }
   ],
-  "tags": ["lifeops"],
+  "system_prompt_addendum": "The user has the LifeOps AI Action Planner open. When the user describes a messy real-world situation, call the lifeops tool with method='plan' and pass the situation text and category. Present the structured action plan returned by the tool clearly to the user. The tool returns a JSON object with summary, urgency, tasks (prioritized list), next_action, resources_needed, and risks.",
+  "tags": ["lifeops", "productivity", "planning", "ai"],
   "ui": {
     "bundle": {
       "format": "static-spa",
@@ -16,10 +22,10 @@
     "views": [
       {
         "name": "main",
-        "title": "lifeops",
+        "title": "LifeOps — AI Action Planner",
         "default": true,
-        "default_size": { "w": 480, "h": 360 },
-        "min_size": { "w": 320, "h": 240 }
+        "default_size": { "w": 660, "h": 800 },
+        "min_size": { "w": 320, "h": 480 }
       }
     ],
     "host_api": {

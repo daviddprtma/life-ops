@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tool-dev-lifeops"
-version = "0.1.0"
-description = "Executa for the lifeops Anna App"
+version = "0.2.0"
+description = "LifeOps AI Action Planner — Executa plugin for Anna App"
 requires-python = ">=3.10"
 
 [project.scripts]

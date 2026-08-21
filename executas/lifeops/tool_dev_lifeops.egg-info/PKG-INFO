@@ -1,5 +1,5 @@
 Metadata-Version: 2.4
 Name: tool-dev-lifeops
-Version: 0.1.0
-Summary: Executa for the lifeops Anna App
+Version: 0.2.0
+Summary: LifeOps AI Action Planner — Executa plugin for Anna App
 Requires-Python: >=3.10
