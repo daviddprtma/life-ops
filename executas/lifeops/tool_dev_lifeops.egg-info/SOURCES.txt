@@ -4,4 +4,5 @@ tool_dev_lifeops.egg-info/PKG-INFO
 tool_dev_lifeops.egg-info/SOURCES.txt
 tool_dev_lifeops.egg-info/dependency_links.txt
 tool_dev_lifeops.egg-info/entry_points.txt
+tool_dev_lifeops.egg-info/requires.txt
 tool_dev_lifeops.egg-info/top_level.txt

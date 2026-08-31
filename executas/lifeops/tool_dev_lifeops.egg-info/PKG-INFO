@@ -3,3 +3,5 @@ Name: tool-dev-lifeops
 Version: 0.2.0
 Summary: LifeOps AI Action Planner — Executa plugin for Anna App
 Requires-Python: >=3.10
+Requires-Dist: openai>=1.0.0
+Requires-Dist: python-dotenv>=1.0.0

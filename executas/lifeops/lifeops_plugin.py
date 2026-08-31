@@ -26,10 +26,32 @@ import json
 import queue
 import re
 import sys
+import os
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
+
+from dotenv import load_dotenv
+from openai import OpenAI
+
+def _env_base_dir() -> str:
+    """Directory to resolve the project ``.env`` against.
+
+    From source this is the repo root, three levels up from this module.  In a
+    PyInstaller one-file binary ``__file__`` lives in the temporary _MEIPASS
+    extraction directory, so walking up from it finds nothing -- resolve
+    against the executable's own directory instead.
+    """
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+# Load the .env file from the root of the project
+load_dotenv(os.path.join(_env_base_dir(), ".env"), override=True)
+client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Constants
@@ -45,67 +67,13 @@ PROTOCOL_VERSION_V2 = "2.0"
 # off otherwise valid reverse-sampling calls.
 SAMPLING_TIMEOUT_SECONDS = 110.0
 
-# JSON Schema for the plan response — keeps the LLM output predictable.
-PLAN_RESPONSE_SCHEMA = {
-    "name": "lifeops_plan",
-    "strict": True,
-    "schema": {
-        "type": "object",
-        "properties": {
-            "summary": {
-                "type": "string",
-                "description": "One-sentence overview of the situation and overall plan.",
-            },
-            "urgency": {
-                "type": "string",
-                "enum": ["low", "medium", "high"],
-                "description": "Overall urgency level of the situation.",
-            },
-            "tasks": {
-                "type": "array",
-                "description": "Prioritised list of concrete action items.",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "id": {"type": "integer"},
-                        "title": {"type": "string", "description": "Short action title."},
-                        "why": {"type": "string", "description": "Why this matters."},
-                        "by_when": {"type": "string", "description": "Rough timeframe (e.g. today, this week, ASAP)."},
-                        "priority": {
-                            "type": "string",
-                            "enum": ["critical", "high", "medium", "low"],
-                        },
-                    },
-                    "required": ["id", "title", "why", "by_when", "priority"],
-                    "additionalProperties": False,
-                },
-            },
-            "next_action": {
-                "type": "string",
-                "description": "The single most important thing to do right now.",
-            },
-            "resources_needed": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Tools, people, or information you will need.",
-            },
-            "risks": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Key risks or blockers to watch for.",
-            },
-        },
-        "required": [
-            "summary",
-            "urgency",
-            "tasks",
-            "next_action",
-            "resources_needed",
-            "risks",
-        ],
-        "additionalProperties": False,
-    },
-}
+# NOTE: We intentionally use responseFormat={type:"json_object"} rather than
+# the strict json_schema variant.  The strict schema mode forces expensive
+# constrained-decoding on the LLM which adds 40-80 s of latency through
+# the Anna sampling proxy and reliably hits the dev-harness 65 s invocation
+# timeout.  The system-prompt already gives the model the full JSON
+# structure, so json_object mode produces correct output at normal speed.
+# The _plan_from_markdown fallback handles the rare model that ignores it.
 
 # Plugin describe() manifest
 MANIFEST = {
@@ -275,29 +243,21 @@ def _do_sample(invoke_id: str, situation: str, category: str, context: str = "")
     if context:
         user_content += f"\n\nAdditional context:\n{context}"
 
-    result = _call_host(
-        "sampling/createMessage",
-        {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": {"type": "text", "text": user_content},
-                }
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_content}
             ],
-            "maxTokens": 600,
-            "systemPrompt": SYSTEM_PROMPT,
-            "temperature": 0.2,
-            "includeContext": "none",
-            "responseFormat": {
-                "type": "json_schema",
-                "json_schema": PLAN_RESPONSE_SCHEMA,
-            },
-            "onUnsupported": "json_object",
-            "metadata": {"executa_invoke_id": invoke_id},
-        },
-        timeout=SAMPLING_TIMEOUT_SECONDS,
-    )
-    text = result.get("content", {}).get("text", "")
+            max_tokens=1200,
+            temperature=0.2,
+            response_format={"type": "json_object"},
+            timeout=SAMPLING_TIMEOUT_SECONDS
+        )
+        text = response.choices[0].message.content or ""
+    except Exception as exc:
+        raise RuntimeError(f"OpenAI API call failed: {exc}") from exc
 
     # Robustly extract JSON block in case the LLM ignored the formatting instructions
     start = text.find("{")

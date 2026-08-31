@@ -1,0 +1,167 @@
+name: Build Executa Binaries
+
+# Manual only (goal 1) -- binaries are a release action, not something to
+# rebuild on every push.  Leave `release_tag` blank to dry-run: the four
+# archives still appear as workflow artifacts, but no Release is created.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Git tag for the GitHub Release (e.g. executa-v0.2.0). Blank = build only, no Release."
+        required: false
+        type: string
+      prerelease:
+        description: "Mark the Release as a pre-release."
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  # PyInstaller embeds the interpreter, so pinning one version keeps all four
+  # binaries on the same Python.  pyproject requires >=3.10; 3.12 has wheels
+  # for every native package in uv.lock (pydantic-core, jiter).
+  UV_PYTHON: "3.12"
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: executas/lifeops
+    strategy:
+      # One bad leg should still yield the other three archives.
+      fail-fast: false
+      matrix:
+        include:
+          # PyInstaller cannot cross-compile, and pydantic-core/jiter are
+          # compiled wheels -- so one runner per OS/arch, no exceptions.
+          # Images are pinned rather than `*-latest`: `macos-latest` is now
+          # arm64 and `windows-latest` is 2025, so a moving label could change
+          # an artifact's architecture without changing its filename.
+          - platform: linux-x86_64
+            # Oldest available GA Ubuntu image: glibc 2.35 vs 24.04's 2.39.
+            # A PyInstaller binary needs glibc >= its builder's, so building
+            # old widens end-user distro coverage at no cost.
+            runner: ubuntu-22.04
+          - platform: darwin-x86_64
+            # `macos-13` has been removed and `macos-14-large` is deprecated;
+            # `macos-15-intel` is the current x86_64 macOS image.
+            runner: macos-15-intel
+          - platform: darwin-arm64
+            # `macos-14` is deprecated (actions/runner-images#13518).
+            # `macos-15` pairs with `macos-15-intel` for a matched OS version.
+            runner: macos-15
+          - platform: windows-x86_64
+            runner: windows-2022
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: executas/lifeops/uv.lock
+
+      - name: Install Python ${{ env.UV_PYTHON }}
+        run: uv python install ${{ env.UV_PYTHON }}
+
+      - name: Sync locked dependencies
+        run: uv sync --locked
+
+      - name: Build, smoke-test, archive and checksum
+        env:
+          # lifeops_plugin builds an OpenAI client at import time and the SDK
+          # raises when the key is absent, so the smoke test needs a
+          # placeholder.  `describe` and `ping` make no network calls.
+          OPENAI_API_KEY: sk-smoke-test-not-a-real-key
+        # `--with` keeps PyInstaller out of uv.lock; `--locked` keeps the
+        # project's own dependencies exactly as pinned.
+        run: uv run --locked --with pyinstaller python build_binary.py --platform ${{ matrix.platform }}
+
+      - name: Show what was produced
+        run: ls -l dist
+        shell: bash
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: executa-binary-${{ matrix.platform }}
+          path: |
+            executas/lifeops/dist/*.tar.gz
+            executas/lifeops/dist/*.zip
+            executas/lifeops/dist/*.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: inputs.release_tag != ''
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect every platform's artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: executa-binary-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify checksums
+        working-directory: release-assets
+        run: |
+          set -euo pipefail
+          ls -l
+          for sidecar in *.sha256; do
+            echo "::group::$sidecar"
+            sha256sum -c "$sidecar"
+            echo "::endgroup::"
+          done
+
+      - name: Build aggregate SHA256SUMS.txt
+        working-directory: release-assets
+        run: cat *.sha256 | sort -k2 > SHA256SUMS.txt
+
+      - name: Create the Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          notes=$(cat <<'EOF'
+          Standalone binaries for the `tool-dev-lifeops` Executa.
+
+          Each archive contains a single self-contained executable at its root,
+          named to match the `entrypoint` declared for that platform in
+          `executas/lifeops/executa.json`:
+
+          | Platform | Archive | Entrypoint inside |
+          |---|---|---|
+          | linux-x86_64 | `.tar.gz` | `tool-dev-lifeops` |
+          | darwin-x86_64 | `.tar.gz` | `tool-dev-lifeops` |
+          | darwin-arm64 | `.tar.gz` | `tool-dev-lifeops` |
+          | windows-x86_64 | `.zip` | `tool-dev-lifeops.exe` |
+
+          Verify a download with `sha256sum -c <archive>.sha256`, or against
+          `SHA256SUMS.txt`.
+
+          To publish these to Anna, download the archives into
+          `executas/lifeops/dist/` and run
+          `anna-app executa upload-binaries --dir executas/lifeops`.
+
+          The macOS binaries carry an ad-hoc signature only -- they are not
+          notarised, so Gatekeeper will prompt if they are launched outside the
+          Anna host.
+          EOF
+          )
+          flags=(--title "LifeOps Executa $TAG" --notes "$notes" --target "$GITHUB_SHA")
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+          gh release create "$TAG" "${flags[@]}" release-assets/*

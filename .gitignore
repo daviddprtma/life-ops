@@ -1,1 +1,10 @@
 .env
+
+# Executa binary build output -- also where downloaded Release assets go, so
+# no binary can reach a commit from either direction.
+executas/lifeops/dist/
+executas/lifeops/build/
+executas/lifeops/*.spec
+
+# Local virtualenv
+executas/lifeops/.venv/

@@ -262,7 +262,7 @@ async function generate() {
 
     if (anna) {
       // ── Real path: call the Python Executa via Anna host ──
-      const result = await anna.tools.invoke({
+      const result = await anna.tools.invokeAsyncAwait({
         tool_id: TOOL_ID,
         method:  "plan",
         args:    { situation, category, context: ctx || undefined },
