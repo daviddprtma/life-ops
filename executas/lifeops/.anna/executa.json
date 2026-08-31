@@ -1,0 +1,9 @@
+{
+  "$schema": "anna-executa-identity/v1",
+  "host": "https://anna.partners",
+  "executa_id": 1114,
+  "tool_id": "tool-clauseguard-executa-tool-dev-lifeops-ddpabxn3",
+  "slug": "executa-tool-dev-lifeops",
+  "executa_type": "tool",
+  "first_published_at": "2026-08-31T03:28:40.462Z"
+}

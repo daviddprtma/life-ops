@@ -1,0 +1,11 @@
+{
+  "$schema": "anna-executas-lock/v1",
+  "host": "https://anna.partners",
+  "executas": {
+    "lifeops": {
+      "tool_id": "tool-clauseguard-executa-tool-dev-lifeops-ddpabxn3",
+      "path": "./executas/lifeops",
+      "source": "published"
+    }
+  }
+}
