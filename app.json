@@ -1,6 +1,11 @@
 {
   "name": "lifeops",
+  "slug": "lifeops-app",
   "tagline": "Turn chaos into clarity — AI-powered action plans for messy real life",
   "description": "Dump a messy real-world situation into LifeOps — text, notes, ideas — and get back a structured action plan instantly. Powered by your favourite LLM via Anna's sampling API, LifeOps breaks down complexity into prioritised tasks, highlights your single next action, and saves your plans for later review.",
-  "category": "productivity"
+  "category": "productivity",
+  "bundled_executas": {
+    "lifeops": { "path": "./executas/lifeops" }
+  },
+  "_comment_bundled_executas": "Keyed by handle, never an array. `anna-app apps publish` pushes each bundled Executa first, mints its real tool_id, then swaps that id into every bundled:<handle> reference in manifest.json. The substitution is in-memory only — this file and manifest.json are never rewritten on disk."
 }

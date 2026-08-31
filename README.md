@@ -101,16 +101,37 @@ Without this grant, `plan` will fail with `-32001 SAMPLING_NOT_GRANTED`. The UI 
 
 ## Publishing
 
-Before publishing to the Anna App Store, you must:
+The Executa is **bundled**: `app.json` declares it under `bundled_executas` with the handle
+`lifeops`, and `manifest.json` references it as `bundled:lifeops`. You never mint or paste a
+tool ID by hand.
 
-1. **Mint a real tool ID** at https://anna.partners/executa → My Tools → Create → 🪪 Mint
-2. Replace `"tool-dev-lifeops"` with your minted ID in:
-   - `manifest.json` → `required_executas[0].tool_id` and `ui.host_api.tools[0]`
-   - `bundle/app.js` → `const TOOL_ID = "..."`
-   - `executas/lifeops/lifeops_plugin.py` → `TOOL_ID = "..."`
-3. Fill in listing metadata in the Developer Console (logo, screenshots, homepage)
-4. Run `anna-app validate` → green
-5. `anna-app publish`
+```bash
+anna-app validate --strict   # must be green first
+anna-app apps publish
+```
+
+`anna-app apps publish` does the wiring for you, in order:
+
+1. Publishes `executas/lifeops` (using the `distribution.active` profile — currently `binary`).
+2. Mints the real platform `tool_id` for it.
+3. Rewrites every `bundled:lifeops` reference in `manifest.json` **in memory only** — the file on
+   disk is left untouched.
+4. Regenerates `bundle/anna-tool-ids.js` so the frontend resolves the minted ID at runtime via
+   `window.__ANNA_TOOL_IDS__["lifeops"]`.
+
+Then fill in listing metadata in the Developer Console (logo, screenshots, homepage) and submit for
+review with `anna-app apps submit-review`.
+
+### The three IDs, kept separate
+
+| ID | Lives in | Purpose |
+|----|----------|---------|
+| `tool-dev-lifeops` | `executas/lifeops/executa.json` → `tool_id` | **Local dev discovery only.** How `anna-app dev` spawns and routes to the stdio process. Never published. |
+| `tool-<handle>-<hash>` | Minted by the platform at publish | The real catalogue ID. Never written into a source file by hand. |
+| `lifeops` | `app.json`, `manifest.json`, `bundle/app.js` → `EXECUTA_HANDLE` | **The bundled handle.** The stable name everything references. |
+
+> Do **not** hand-edit `bundle/anna-tool-ids.js`, and do not replace `bundled:lifeops` with a
+> concrete ID — a pinned ID drifts on the next publish.
 
 ---
 
@@ -119,10 +140,12 @@ Before publishing to the Anna App Store, you must:
 | File | Purpose |
 |------|---------|
 | `manifest.json` | Anna App manifest (schema 2, permissions, UI, dev config) |
-| `app.json` | App store metadata (name, tagline, description, category) |
+| `app.json` | App store metadata + `bundled_executas` handle → path map |
 | `bundle/index.html` | Iframe entry point — two-column input/output layout |
 | `bundle/style.css` | Complete design system (dark mode, glassmorphism, animations) |
+| `bundle/anna-tool-ids.js` | **Auto-generated** handle → minted `tool_id` map; loaded before `app.js` |
 | `bundle/app.js` | Frontend logic (AnnaAppRuntime, tools.invoke, plan renderer, storage) |
+| `executas/lifeops/executa.json` | Executa config — local dev `tool_id`, spawn `type`, distribution profiles |
 | `executas/lifeops/lifeops_plugin.py` | Python Executa — v2 protocol, sampling, plan tool |
 | `executas/lifeops/pyproject.toml` | Python package config |
 | `fixtures/sampling-mock.jsonl` | Mock LLM response for offline dev |

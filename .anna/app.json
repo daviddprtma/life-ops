@@ -1,0 +1,7 @@
+{
+  "$schema": "anna-app-identity/v1",
+  "host": "https://anna.partners",
+  "app_id": 231,
+  "slug": "lifeops-app",
+  "first_published_at": "2026-08-31T03:05:04.214Z"
+}

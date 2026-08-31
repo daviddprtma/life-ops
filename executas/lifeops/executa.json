@@ -3,28 +3,48 @@
   "tool_id": "tool-dev-lifeops",
   "name": "tool-dev-lifeops",
   "display_name": "LifeOps Planner",
+  "executa_type": "tool",
+  "type": "python",
+  "enabled": true,
   "version": "0.2.0",
   "description": "Turns a messy real-world situation into a structured, prioritised action plan using the host LLM.",
   "author": "LifeOps",
-  "host_capabilities": ["llm.sample"],
+  "_comment": "`tool_id` here is the LOCAL DEV discovery id only — it is how `anna-app dev` spawns and routes to this stdio process. It is never published. At `anna-app apps publish` the platform mints the real catalogue tool_id and injects it into the bundle via the generated bundle/anna-tool-ids.js. `type` selects the local spawn strategy (uv run) and is independent of `distribution.active`, which selects the publish profile.",
+  "host_capabilities": [
+    "llm.sample"
+  ],
   "distribution": {
-    "type": "binary",
-    "binary_artifacts": {
-      "linux-x86_64": {
-        "path": "dist/tool-dev-lifeops-{version}-linux-x86_64.tar.gz",
-        "entrypoint": "tool-dev-lifeops"
+    "active": "binary",
+    "profiles": {
+      "local": {
+        "type": "local",
+        "supports_protocol": true
       },
-      "darwin-x86_64": {
-        "path": "dist/tool-dev-lifeops-{version}-darwin-x86_64.tar.gz",
-        "entrypoint": "tool-dev-lifeops"
-      },
-      "darwin-arm64": {
-        "path": "dist/tool-dev-lifeops-{version}-darwin-arm64.tar.gz",
-        "entrypoint": "tool-dev-lifeops"
-      },
-      "windows-x86_64": {
-        "path": "dist/tool-dev-lifeops-{version}-windows-x86_64.zip",
-        "entrypoint": "tool-dev-lifeops.exe"
+      "binary": {
+        "type": "binary",
+        "supports_protocol": true,
+        "binary_artifacts": {
+          "darwin-arm64": {
+            "path": "dist/tool-dev-lifeops-0.2.0-darwin-arm64.tar.gz",
+            "entrypoint": "tool-dev-lifeops",
+            "format": "tar.gz"
+          },
+          "darwin-x86_64": {
+            "path": "dist/tool-dev-lifeops-0.2.0-darwin-x86_64.tar.gz",
+            "entrypoint": "tool-dev-lifeops",
+            "format": "tar.gz"
+          },
+          "linux-x86_64": {
+            "path": "dist/tool-dev-lifeops-0.2.0-linux-x86_64.tar.gz",
+            "entrypoint": "tool-dev-lifeops",
+            "format": "tar.gz"
+          },
+          "windows-x86_64": {
+            "path": "dist/tool-dev-lifeops-0.2.0-windows-x86_64.zip",
+            "entrypoint": "tool-dev-lifeops.exe",
+            "format": "zip"
+          }
+        }
       }
     }
   }

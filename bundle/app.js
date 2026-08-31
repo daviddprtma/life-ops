@@ -14,7 +14,18 @@ import { AnnaAppRuntime } from "/static/anna-apps/_sdk/latest/index.js";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const TOOL_ID     = "tool-dev-lifeops";
+const EXECUTA_HANDLE = "lifeops";
+
+// Resolved at runtime from the generated anna-tool-ids.js sidecar (written by
+// `anna-app dev` / `anna-app apps publish`), so the minted platform tool_id is
+// never hardcoded here.  The literal is only a fallback for mock/offline runs
+// where no sidecar is present.
+const TOOL_ID =
+  (typeof window !== "undefined" &&
+    window.__ANNA_TOOL_IDS__ &&
+    window.__ANNA_TOOL_IDS__[EXECUTA_HANDLE]) ||
+  "tool-dev-lifeops";
+
 const STORAGE_KEY = "lifeops:history";
 const MAX_HISTORY = 5;
 

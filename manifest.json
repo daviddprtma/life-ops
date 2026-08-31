@@ -8,7 +8,8 @@
   "host_capabilities": ["llm.sample"],
   "required_executas": [
     {
-      "tool_id": "tool-dev-lifeops"
+      "tool_id": "bundled:lifeops",
+      "version": "latest"
     }
   ],
   "system_prompt_addendum": "The user has the LifeOps AI Action Planner open. When the user describes a messy real-world situation, call the lifeops tool with method='plan' and pass the situation text and category. Present the structured action plan returned by the tool clearly to the user. The tool returns a JSON object with summary, urgency, tasks (prioritized list), next_action, resources_needed, and risks.",
@@ -29,7 +30,7 @@
       }
     ],
     "host_api": {
-      "tools": ["tool-dev-lifeops"],
+      "tools": ["required:*"],
       "storage": ["get", "set"],
       "window": ["set_title", "ready"]
     },
