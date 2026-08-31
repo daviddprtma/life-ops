@@ -49,7 +49,7 @@ def _env_base_dir() -> str:
 
 
 # Load the .env file from the root of the project
-load_dotenv(os.path.join(_env_base_dir(), ".env"), override=True)
+load_dotenv(os.path.join(_env_base_dir(), ".env"))
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 
