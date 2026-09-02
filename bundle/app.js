@@ -274,19 +274,24 @@ async function generate() {
     if (anna) {
       // ── Real path: call the Python Executa via Anna host ──
       const result = await anna.tools.invokeAsyncAwait({
-        tool_id: TOOL_ID,
-        method:  "plan",
-        args:    { situation, category, context: ctx || undefined },
+        tool_id:   TOOL_ID,
+        method:    "plan",
+        args:      { situation, category, context: ctx || undefined },
+        // Job deadline, enforced server-side.  This belongs in the REQUEST
+        // payload — it is the only way to override the 30-minute default.
+        timeoutMs: 180_000,
       }, {
-        // Runtime options belong in the second argument.  Putting this in
-        // the request payload silently retains the SDK's 70-second default.
-        timeoutMs: 120_000,
+        // Client wall clock only.  The SDK arms a local timer with this and
+        // never forwards it to the job, so on its own it just makes the UI
+        // give up while the job keeps running.  Keep it below the job
+        // deadline above and above the plugin's own LLM timeout.
+        timeoutMs: 150_000,
       });
 
-      if (!result?.success) {
-        throw new Error(result?.error || "The planner returned an empty response.");
-      }
-      plan = result.data?.plan;
+      // invokeAsyncAwait resolves with the job's already-unwrapped result
+      // payload, not the synchronous tools.invoke {success, data} envelope.
+      // A tool-level failure rejects instead, carrying the plugin's message.
+      plan = result?.plan;
       if (!plan) throw new Error("Plan data was missing from the response.");
 
     } else {

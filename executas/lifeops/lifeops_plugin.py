@@ -32,8 +32,30 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from dotenv import load_dotenv
-from openai import OpenAI
+# The host speaks UTF-8 over stdio, but a child process on Windows inherits the
+# console codepage (cp1252 here).  Encoding an LLM reply containing any
+# character outside that codepage -- U+2011, arrows, emoji -- then raises
+# UnicodeEncodeError inside the worker thread; the reply frame is never written
+# and the host waits out the entire job deadline for a frame that never comes.
+# Pin both streams to UTF-8 so the transport matches the protocol.
+try:
+    sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+    sys.stdout.reconfigure(encoding="utf-8", errors="strict", newline="\n")
+except (AttributeError, ValueError):  # not a reconfigurable TextIOWrapper
+    pass
+
+# from dotenv import load_dotenv
+# from openai import OpenAI
+
+import openai
+
+openai.api_key = "sk-12X8LZjp1HxAuvezfeLliyVaHdZSjh3mQawOOrLUN7tsmR4i"
+openai.base_url = "https://kiosapi.com/v1/"
+
+# One attempt only.  The per-call `timeout` below is per *attempt*, so the SDK's
+# default max_retries=2 would turn a 100 s timeout into a ~300 s worst case and
+# blow the UI's wall clock all over again.
+openai.max_retries = 0
 
 def _env_base_dir() -> str:
     """Directory to resolve the project ``.env`` against.
@@ -49,8 +71,9 @@ def _env_base_dir() -> str:
 
 
 # Load the .env file from the root of the project
-load_dotenv(os.path.join(_env_base_dir(), ".env"))
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+# load_dotenv(os.path.join(_env_base_dir(), ".env"))
+# client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"), base_url=os.environ.get("OPENAI_BASE_URL"))
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -61,11 +84,15 @@ TOOL_ID = "tool-dev-lifeops"
 VERSION = "0.2.0"
 PROTOCOL_VERSION_V2 = "2.0"
 
-# Keep this below the UI invocation timeout.  The Anna host may take longer
-# than a short local request when it has to wake a provider or stream a
-# structured response, so a 55-second plugin timeout was needlessly cutting
-# off otherwise valid reverse-sampling calls.
-SAMPLING_TIMEOUT_SECONDS = 110.0
+# Upper bound on a single LLM call.  Must stay the *smallest* timer in the
+# chain so that when the provider is slow this plugin fails first and its own
+# readable message reaches the UI, rather than the SDK's opaque wall-clock
+# error.  The ladder, set in bundle/app.js:
+#
+#     plugin LLM timeout (100 s) < SDK wall clock (150 s) < job deadline (180 s)
+#
+# This is a true ceiling only because openai.max_retries is pinned to 0 above.
+SAMPLING_TIMEOUT_SECONDS = 100.0
 
 # NOTE: We intentionally use responseFormat={type:"json_object"} rather than
 # the strict json_schema variant.  The strict schema mode forces expensive
@@ -138,7 +165,13 @@ def _write(msg: dict) -> None:
     """Write one JSON-RPC frame to stdout. Thread-safe."""
     payload = json.dumps(msg, ensure_ascii=False)
     with _stdout_lock:
-        sys.stdout.write(payload + "\n")
+        try:
+            sys.stdout.write(payload + "\n")
+        except UnicodeEncodeError:
+            # Defence in depth behind the UTF-8 reconfigure above: if the stream
+            # still cannot represent the payload, escape it.  \uXXXX output is
+            # valid JSON and stays on one line, so the frame is never lost.
+            sys.stdout.write(json.dumps(msg, ensure_ascii=True) + "\n")
         sys.stdout.flush()
 
 
@@ -234,6 +267,33 @@ CRITICAL INSTRUCTION:
 You MUST return ONLY valid JSON.
 Do NOT include markdown formatting, backticks, or introductory prose.
 The response must start with "{" and end with "}".
+
+Use EXACTLY these keys and no others.  The UI reads these names literally, so a
+renamed or omitted field renders as blank:
+
+{
+  "summary": "2-3 sentence plain-language summary of the situation",
+  "urgency": "high" | "medium" | "low",
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Short verb-first action",
+      "why": "One sentence on why this matters",
+      "by_when": "Human-readable timeframe, e.g. Today / This week",
+      "priority": "critical" | "high" | "medium" | "low"
+    }
+  ],
+  "next_action": "The single most important thing to do right now",
+  "resources_needed": ["plain strings, not objects"],
+  "risks": ["plain strings, not objects"]
+}
+
+Rules:
+- "tasks" must have 3-6 entries, "id" numbered from 1 in priority order.
+- "urgency" and "priority" must be one of the listed values, lowercase.
+- "resources_needed" and "risks" are arrays of plain strings — never objects.
+- Use only the keys above; do not add "category", "description", "due",
+  "dependencies", "mitigation", or any other field.
 """
 
 
@@ -244,8 +304,8 @@ def _do_sample(invoke_id: str, situation: str, category: str, context: str = "")
         user_content += f"\n\nAdditional context:\n{context}"
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
+        response = openai.chat.completions.create(
+            model="openai/gpt-oss-120b",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_content}
@@ -253,7 +313,7 @@ def _do_sample(invoke_id: str, situation: str, category: str, context: str = "")
             max_tokens=1200,
             temperature=0.2,
             response_format={"type": "json_object"},
-            timeout=SAMPLING_TIMEOUT_SECONDS
+            timeout=SAMPLING_TIMEOUT_SECONDS,
         )
         text = response.choices[0].message.content or ""
     except Exception as exc:
@@ -397,7 +457,13 @@ def _handle_invoke(req: dict) -> None:
         except Exception as exc:  # noqa: BLE001
             result = {"success": False, "error": str(exc)}
 
-    _ok(req.get("id"), result)
+    try:
+        _ok(req.get("id"), result)
+    except Exception as exc:  # noqa: BLE001
+        # This runs on a pool thread, where a raised exception is swallowed into
+        # the Future.  Every invoke must be answered with *something* or the host
+        # blocks until the job deadline, so degrade to an error frame.
+        _err(req.get("id"), -32603, f"failed to write tool result: {exc}")
 
 
 def _handle_shutdown(_req: dict) -> None:
