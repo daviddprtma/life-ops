@@ -6,7 +6,7 @@
   "executa_type": "tool",
   "type": "python",
   "enabled": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Turns a messy real-world situation into a structured, prioritised action plan using the host LLM.",
   "author": "LifeOps",
   "_comment": "`tool_id` here is the LOCAL DEV discovery id only — it is how `anna-app dev` spawns and routes to this stdio process. It is never published. At `anna-app apps publish` the platform mints the real catalogue tool_id and injects it into the bundle via the generated bundle/anna-tool-ids.js. `type` selects the local spawn strategy (uv run) and is independent of `distribution.active`, which selects the publish profile.",
