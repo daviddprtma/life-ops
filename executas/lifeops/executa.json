@@ -25,22 +25,22 @@
         "supports_protocol": true,
         "binary_artifacts": {
           "darwin-arm64": {
-            "path": "dist/tool-dev-lifeops-0.2.0-darwin-arm64.tar.gz",
+            "path": "dist/tool-dev-lifeops-0.3.0-darwin-arm64.tar.gz",
             "entrypoint": "tool-dev-lifeops",
             "format": "tar.gz"
           },
           "darwin-x86_64": {
-            "path": "dist/tool-dev-lifeops-0.2.0-darwin-x86_64.tar.gz",
+            "path": "dist/tool-dev-lifeops-0.3.0-darwin-x86_64.tar.gz",
             "entrypoint": "tool-dev-lifeops",
             "format": "tar.gz"
           },
           "linux-x86_64": {
-            "path": "dist/tool-dev-lifeops-0.2.0-linux-x86_64.tar.gz",
+            "path": "dist/tool-dev-lifeops-0.3.0-linux-x86_64.tar.gz",
             "entrypoint": "tool-dev-lifeops",
             "format": "tar.gz"
           },
           "windows-x86_64": {
-            "path": "dist/tool-dev-lifeops-0.2.0-windows-x86_64.zip",
+            "path": "dist/tool-dev-lifeops-0.3.0-windows-x86_64.zip",
             "entrypoint": "tool-dev-lifeops.exe",
             "format": "zip"
           }
