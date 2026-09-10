@@ -81,7 +81,7 @@ def _env_base_dir() -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 TOOL_ID = "tool-dev-lifeops"
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 PROTOCOL_VERSION_V2 = "2.0"
 
 # Upper bound on a single LLM call.  Must stay the *smallest* timer in the
@@ -305,7 +305,7 @@ def _do_sample(invoke_id: str, situation: str, category: str, context: str = "")
 
     try:
         response = openai.chat.completions.create(
-            model="openai/gpt-oss-120b",
+            model="openai/gpt-oss-20b",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_content}
