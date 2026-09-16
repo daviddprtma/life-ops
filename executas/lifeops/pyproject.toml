@@ -4,11 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tool-dev-lifeops"
-version = "0.4.0"
+version = "0.5.0"
 description = "LifeOps AI Action Planner — Executa plugin for Anna App"
 requires-python = ">=3.10"
 dependencies = [
     "openai>=1.0.0",
+    "primp>=2.0.1",
     "python-dotenv>=1.0.0",
 ]
 
