@@ -94,6 +94,17 @@ PROTOCOL_VERSION_V2 = "2.0"
 # This is a true ceiling only because openai.max_retries is pinned to 0 above.
 SAMPLING_TIMEOUT_SECONDS = 100.0
 
+# Model used for planning.  Must be fast enough to finish a full 1200-token
+# plan well inside SAMPLING_TIMEOUT_SECONDS above.
+#
+# gpt-oss-20b was the original choice, but it is a reasoning model: the proxy
+# bills the hidden reasoning tokens against the same wall clock, so a real
+# planning call measured 45-89 s, and intermittently 503s under load.  That
+# straddles the 100 s ceiling and surfaced to users as "Request timed out".
+# agnes-3.0-flash returns the same JSON contract in 17-33 s, leaving a wide
+# margin.  Re-measure before changing this.
+PLANNING_MODEL = "agnes-3.0-flash"
+
 # NOTE: We intentionally use responseFormat={type:"json_object"} rather than
 # the strict json_schema variant.  The strict schema mode forces expensive
 # constrained-decoding on the LLM which adds 40-80 s of latency through
@@ -119,37 +130,56 @@ MANIFEST = {
                 "action plan with prioritised tasks, next action, resources, "
                 "and risks."
             ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "situation": {
-                        "type": "string",
-                        "description": "The messy situation the user wants help with.",
-                    },
-                    "category": {
-                        "type": "string",
-                        "description": (
-                            "Situation category: personal, work, finance, "
-                            "health, relationships, or other."
-                        ),
-                    },
-                    "context": {
-                        "type": "string",
-                        "description": "Optional extra context or constraints.",
-                    },
+            # Protocol-native parameter *array*.  The Agent's ToolDefinition
+            # parser reads this shape; an MCP-flavoured JSON Schema object
+            # (input_schema style) parses without error but yields an EMPTY
+            # parameter list, so the LLM invents argument names and the
+            # handler sees a blank situation.
+            "parameters": [
+                {
+                    "name": "situation",
+                    "type": "string",
+                    "description": "The messy situation the user wants help with.",
+                    "required": True,
                 },
-                "required": ["situation", "category"],
-                "additionalProperties": False,
-            },
+                {
+                    "name": "category",
+                    "type": "string",
+                    "description": (
+                        "Situation category: personal, work, finance, "
+                        "health, relationships, or other."
+                    ),
+                    "required": True,
+                    "enum": [
+                        "personal",
+                        "work",
+                        "finance",
+                        "health",
+                        "relationships",
+                        "other",
+                    ],
+                },
+                {
+                    "name": "context",
+                    "type": "string",
+                    "description": "Optional extra context or constraints.",
+                    # `required` defaults to true protocol-side, so an optional
+                    # parameter must say so explicitly.
+                    "required": False,
+                },
+            ],
+            # Per-tool execute timeout, protocol default 60 s.  The handler
+            # makes a host LLM call budgeted at SAMPLING_TIMEOUT_SECONDS
+            # (100 s), so the default would cut a slow plan off mid-sample.
+            # 120 s lets the plugin's own graceful error win the race while
+            # staying under the bundle UI's 150 s client wall clock.
+            "timeout": 120,
         },
         {
             "name": "ping",
             "description": "Smoke-test method — returns pong.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": False,
-            },
+            # Empty list = takes no arguments.
+            "parameters": [],
         },
     ],
 }
@@ -305,7 +335,7 @@ def _do_sample(invoke_id: str, situation: str, category: str, context: str = "")
 
     try:
         response = openai.chat.completions.create(
-            model="gpt-oss-20b",
+            model=PLANNING_MODEL,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_content}
