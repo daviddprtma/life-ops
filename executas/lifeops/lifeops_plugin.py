@@ -103,7 +103,7 @@ SAMPLING_TIMEOUT_SECONDS = 100.0
 # straddles the 100 s ceiling and surfaced to users as "Request timed out".
 # agnes-3.0-flash returns the same JSON contract in 17-33 s, leaving a wide
 # margin.  Re-measure before changing this.
-PLANNING_MODEL = "agnes-3.0-flash"
+PLANNING_MODEL = "gpt-oss-20b"
 
 # NOTE: We intentionally use responseFormat={type:"json_object"} rather than
 # the strict json_schema variant.  The strict schema mode forces expensive
