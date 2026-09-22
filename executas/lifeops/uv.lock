@@ -403,7 +403,7 @@ wheels = [
 
 [[package]]
 name = "tool-dev-lifeops"
-version = "0.6.0"
+version = "0.8.0"
 source = { editable = "." }
 dependencies = [
     { name = "openai" },
