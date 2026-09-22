@@ -81,7 +81,7 @@ def _env_base_dir() -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 TOOL_ID = "tool-dev-lifeops"
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 PROTOCOL_VERSION_V2 = "2.0"
 
 # Upper bound on a single LLM call.  Must stay the *smallest* timer in the
