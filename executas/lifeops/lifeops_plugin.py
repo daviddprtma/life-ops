@@ -30,7 +30,7 @@ import os
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
+from typing import Any, Iterator
 
 # The host speaks UTF-8 over stdio, but a child process on Windows inherits the
 # console codepage (cp1252 here).  Encoding an LLM reply containing any
@@ -81,7 +81,7 @@ def _env_base_dir() -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 TOOL_ID = "tool-dev-lifeops"
-VERSION = "0.8.0"
+VERSION = "0.9.0"
 PROTOCOL_VERSION_V2 = "2.0"
 
 # Upper bound on a single LLM call.  Must stay the *smallest* timer in the
@@ -94,16 +94,22 @@ PROTOCOL_VERSION_V2 = "2.0"
 # This is a true ceiling only because openai.max_retries is pinned to 0 above.
 SAMPLING_TIMEOUT_SECONDS = 100.0
 
-# Model used for planning.  Must be fast enough to finish a full 1200-token
-# plan well inside SAMPLING_TIMEOUT_SECONDS above.
+PLANNING_MODEL = "muse-spark-1.3-contributor"
+
+# Ceiling on the planner's reply length.  A cap, not a target: a normal plan
+# ends on its own well under it, so raising it costs no latency.
 #
-# gpt-oss-20b was the original choice, but it is a reasoning model: the proxy
-# bills the hidden reasoning tokens against the same wall clock, so a real
-# planning call measured 45-89 s, and intermittently 503s under load.  That
-# straddles the 100 s ceiling and surfaced to users as "Request timed out".
-# agnes-3.0-flash returns the same JSON contract in 17-33 s, leaving a wide
-# margin.  Re-measure before changing this.
-PLANNING_MODEL = "gpt-oss-20b"
+# It was 1200, which a verbose plan overruns -- a health or finance answer with
+# long "why" fields does it easily.  The completion then stops mid-string and
+# the reply is unterminated JSON, which reached users as "LLM returned
+# non-JSON output" with the plan visible but unreadable in the error text.  If
+# this is ever lowered again, _repair_truncated_json below is what keeps a
+# cut-off reply usable.
+PLAN_MAX_TOKENS = 4000
+
+# How far back _repair_truncated_json will back up looking for a comma to cut
+# at, when the reply stopped inside the last member of a list.
+MAX_REPAIR_CUTS = 32
 
 # NOTE: We intentionally use responseFormat={type:"json_object"} rather than
 # the strict json_schema variant.  The strict schema mode forces expensive
@@ -340,31 +346,239 @@ def _do_sample(invoke_id: str, situation: str, category: str, context: str = "")
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_content}
             ],
-            max_tokens=1200,
+            max_tokens=PLAN_MAX_TOKENS,
             temperature=0.2,
             response_format={"type": "json_object"},
             timeout=SAMPLING_TIMEOUT_SECONDS,
         )
-        text = response.choices[0].message.content or ""
     except Exception as exc:
         raise RuntimeError(f"OpenAI API call failed: {exc}") from exc
 
-    # Robustly extract JSON block in case the LLM ignored the formatting instructions
-    start = text.find("{")
-    end = text.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        text = text[start : end + 1]
+    choice = response.choices[0]
+    text = choice.message.content or ""
 
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError as exc:
-        # Some user-selected Anna models honour the planning prompt but ignore
-        # JSON mode and return a conventional Markdown plan.  Preserve that
-        # useful reverse-sampling result instead of turning it into an error.
-        markdown_plan = _plan_from_markdown(text)
-        if markdown_plan is not None:
-            return markdown_plan
-        raise RuntimeError(f"LLM returned non-JSON output. Please try again.\n\nRaw: {text[:400]}") from exc
+    plan = _parse_plan(text)
+    if plan is not None:
+        return plan
+
+    # json_object mode guarantees syntax, not completeness: the provider still
+    # stops mid-document when the token ceiling is reached, so say which of the
+    # two it was -- "try again" reads very differently when the reply was
+    # actually fine up to the point it ran out of room.
+    if getattr(choice, "finish_reason", None) == "length":
+        reason = "The model ran out of room mid-plan (max_tokens ceiling reached), leaving the JSON incomplete."
+    else:
+        reason = "The reply did not contain a readable plan."
+    raise RuntimeError(f"LLM returned non-JSON output. Please try again.\n\n{reason}\n\nRaw: {text[:400]}")
+
+
+def _parse_plan(text: str) -> dict | None:
+    """Read the planner's reply, however mangled, into a plan dict.
+
+    Order matters.  Strict read first; then a repair for a reply the token
+    ceiling cut short; then the Markdown fallback for a model that ignored JSON
+    mode altogether.  Returns None only when nothing usable can be recovered.
+    """
+    for block in _json_block_candidates(text):
+        parsed = _loads_loose(block)
+        if not isinstance(parsed, dict):
+            parsed = _repair_truncated_json(block)
+        if isinstance(parsed, dict):
+            plan = _normalise_plan(parsed)
+            if plan is not None:
+                return plan
+
+    return _plan_from_markdown(text)
+
+
+def _json_block_candidates(text: str) -> Iterator[str]:
+    """Yield the substrings of `text` worth reading as the JSON document.
+
+    The prompt asks for bare JSON, but models still wrap it in ```json fences
+    or precede it with a sentence, so the outer { ... } is the document.
+
+    A *complete* document ends at its last "}".  An unterminated one -- the
+    token ceiling cut it off -- has no last "}" to trust, and chopping at a
+    nested object's closing brace would silently discard the half-written task
+    after it, so that one runs to the end of the reply.  Both are yielded when
+    the reply is ambiguous; the caller tries each in turn.
+    """
+    start = text.find("{")
+    if start == -1:
+        return
+
+    body = text[start:]
+    openers, in_string, _, _ = _scan_json(body)
+    if openers or in_string:
+        yield body.strip()
+
+    end = text.rfind("}")
+    if end > start:
+        yield text[start : end + 1]
+
+
+def _scan_json(text: str) -> tuple[list[str], bool, bool, list[int]]:
+    """Walk `text` once, tracking JSON string and bracket state.
+
+    Returns the closing characters still owed, whether the walk ended inside a
+    string, whether a backslash was left dangling, and the offset of every comma
+    that sits outside a string.
+    """
+    openers: list[str] = []
+    commas: list[int] = []
+    in_string = False
+    escaped = False
+
+    for index, char in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            openers.append("}")
+        elif char == "[":
+            openers.append("]")
+        elif char == ",":
+            commas.append(index)
+        elif char in "}]" and openers:
+            openers.pop()
+
+    return openers, in_string, escaped, commas
+
+
+def _close_json(text: str) -> str:
+    """Append whatever `text` needs to become a complete JSON document."""
+    openers, in_string, escaped, _ = _scan_json(text)
+    suffix = ""
+    if escaped:  # a lone trailing backslash would escape the quote we add
+        suffix += "\\"
+    if in_string:
+        suffix += '"'
+    return text + suffix + "".join(reversed(openers))
+
+
+def _loads_loose(text: str) -> Any:
+    """json.loads, then again allowing raw control characters inside strings.
+
+    Models occasionally emit a literal newline or tab inside a JSON string.
+    Strict JSON rejects that; every consumer of the result accepts it.
+    """
+    for strict in (True, False):
+        try:
+            return json.loads(text, strict=strict)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+def _repair_truncated_json(text: str) -> dict | None:
+    """Salvage a plan from a JSON document cut off mid-value.
+
+    A completion that stops on the token ceiling ends inside the last string or
+    between elements -- ``{"tasks": [{"id": 1, "title": "Call`` -- which no
+    parser accepts, even though everything emitted before the cut is intact.
+
+    Candidates are tried newest-comma-first so the half-written member is
+    dropped rather than kept: closing its dangling string would render a
+    half-word title.  Closing the document as-is is the last resort, for a reply
+    whose cut has no comma behind it at all (inside "summary", say).
+    """
+    _, _, _, commas = _scan_json(text)
+
+    for cut in list(reversed(commas[-MAX_REPAIR_CUTS:])) + [len(text)]:
+        candidate = text[:cut].rstrip().rstrip(",").rstrip()
+        if not candidate:
+            continue
+        parsed = _loads_loose(_close_json(candidate))
+        if isinstance(parsed, dict):
+            return parsed
+
+    return None
+
+
+def _one_of(value: Any, allowed: set[str], default: str) -> str:
+    """Coerce an enum field to one of the values the UI styles by."""
+    text = str(value or "").strip().lower()
+    return text if text in allowed else default
+
+
+def _string_list(value: Any) -> list[str]:
+    """Flatten a list field to the plain strings the UI renders.
+
+    The prompt asks for strings, but models still answer "resources_needed" and
+    "risks" with objects whenever the field suits them, and the UI would render
+    those as "[object Object]".
+    """
+    if not isinstance(value, list):
+        return []
+
+    items = []
+    for entry in value:
+        if isinstance(entry, str):
+            text = entry.strip()
+        elif isinstance(entry, dict):
+            text = " — ".join(
+                str(part).strip()
+                for part in entry.values()
+                if isinstance(part, (str, int, float)) and str(part).strip()
+            )
+        else:
+            text = "" if entry is None else str(entry).strip()
+        if text:
+            items.append(text)
+    return items
+
+
+def _normalise_plan(plan: dict) -> dict | None:
+    """Coerce a parsed reply into the exact shape the UI reads.
+
+    The UI destructures fixed key names and styles urgency/priority against
+    fixed values, so fill both in.  Returns None when the dict carries no
+    usable plan, which sends the caller on to the Markdown fallback rather than
+    rendering an empty one.
+    """
+    summary = str(plan.get("summary") or "").strip()
+
+    raw_tasks = plan.get("tasks")
+    tasks = []
+    for index, task in enumerate(raw_tasks if isinstance(raw_tasks, list) else [], start=1):
+        if not isinstance(task, dict):
+            continue
+        title = str(task.get("title") or "").strip()
+        if not title:
+            continue
+        task_id = task.get("id")
+        tasks.append(
+            {
+                "id": task_id if isinstance(task_id, int) else index,
+                "title": title,
+                "why": str(task.get("why") or "").strip(),
+                "by_when": str(task.get("by_when") or "").strip() or "This week",
+                "priority": _one_of(
+                    task.get("priority"), {"critical", "high", "medium", "low"}, "medium"
+                ),
+            }
+        )
+
+    if not summary and not tasks:
+        return None
+
+    return {
+        "summary": summary or "A structured action plan was generated.",
+        "urgency": _one_of(plan.get("urgency"), {"high", "medium", "low"}, "medium"),
+        "tasks": tasks,
+        "next_action": str(plan.get("next_action") or "").strip()
+        or (tasks[0]["title"] if tasks else ""),
+        "resources_needed": _string_list(plan.get("resources_needed")),
+        "risks": _string_list(plan.get("risks")),
+    }
 
 
 def _plan_from_markdown(text: str) -> dict | None:
