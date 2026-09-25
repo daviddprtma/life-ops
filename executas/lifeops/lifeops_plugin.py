@@ -81,7 +81,7 @@ def _env_base_dir() -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 TOOL_ID = "tool-dev-lifeops"
-VERSION = "0.9.0"
+VERSION = "1.0.0"
 PROTOCOL_VERSION_V2 = "2.0"
 
 # Upper bound on a single LLM call.  Must stay the *smallest* timer in the
@@ -94,7 +94,7 @@ PROTOCOL_VERSION_V2 = "2.0"
 # This is a true ceiling only because openai.max_retries is pinned to 0 above.
 SAMPLING_TIMEOUT_SECONDS = 100.0
 
-PLANNING_MODEL = "muse-spark-1.3-contributor"
+PLANNING_MODEL = "sensenova-6.8-flash-lite"
 
 # Ceiling on the planner's reply length.  A cap, not a target: a normal plan
 # ends on its own well under it, so raising it costs no latency.
